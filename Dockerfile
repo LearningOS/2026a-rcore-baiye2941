@@ -7,6 +7,11 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     RUST_VERSION=nightly-2024-05-02
 
+# 国内镜像加速：只改变下载源，不改变安装的工具链版本
+# ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
+#     RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+
+
 # Match the GitHub grading environment, including the QEMU 8.2 security updates.
 RUN apt-get update && apt-get install -y \
     ca-certificates curl git build-essential pkg-config python3 wget xz-utils \
@@ -14,6 +19,16 @@ RUN apt-get update && apt-get install -y \
     apt-get clean
 
 RUN python3 -c 'import subprocess; versions = [subprocess.check_output([command, "--version"], text=True) for command in ("qemu-system-riscv64", "qemu-riscv64")]; print("\n".join(versions)); assert all(version.split("version ", 1)[1].split()[0] == "8.2.2" for version in versions), "This course requires QEMU 8.2.2."'
+
+# crates.io 国内镜像，供 cargo-binutils 下载使用
+RUN mkdir -p /usr/local/cargo && printf '%s\n' \
+    '[source.crates-io]' \
+    'replace-with = "tuna"' \
+    '' \
+    '[source.tuna]' \
+    'registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' \
+    > /usr/local/cargo/config.toml
+
 
 WORKDIR /root
 RUN set -eux; \
