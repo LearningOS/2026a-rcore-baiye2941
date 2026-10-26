@@ -46,6 +46,7 @@ fn clear_bss() {
         fn ebss();
     }
     unsafe {
+        // as usize 是取地址，地址相减就是长度，from_raw_parts_mut 是把地址和长度转成 slice，fill(0) 就是清零
         core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
             .fill(0);
     }
