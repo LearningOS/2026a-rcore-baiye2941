@@ -8,8 +8,8 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     RUST_VERSION=nightly-2024-05-02
 
 # 国内镜像加速：只改变下载源，不改变安装的工具链版本
-# ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
-#     RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+ENV RUSTUP_DIST_SERVER=https://rsproxy.cn \
+    RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 
 
 # Match the GitHub grading environment, including the QEMU 8.2 security updates.
