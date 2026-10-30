@@ -9,6 +9,8 @@ pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     /// The task context
     pub task_cx: TaskContext,
+    /// 系统调用计数器
+    pub syscall_count: [u16; 512],
 }
 
 /// The status of a task

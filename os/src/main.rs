@@ -100,8 +100,8 @@ pub fn rust_main() -> ! {
     heap_alloc::init_heap();
     trap::init();
     loader::load_apps();
-    trap::enable_timer_interrupt();
-    timer::set_next_trigger();
-    task::run_first_task();
+    trap::enable_timer_interrupt();  // 打开时钟中断 sie.stie = 1
+    timer::set_next_trigger();  // 设置下一次时钟中断的时间 10ms
+    task::run_first_task();  // 进入第一个用户任务
     panic!("Unreachable in rust_main!");
 }
