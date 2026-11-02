@@ -28,6 +28,9 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    /// 系统调用计数器，下标是系统调用号（trace 的 2 号请求查的就是它）
+    pub syscall_count: [u16; 512],
 }
 
 impl TaskControlBlock {
@@ -63,6 +66,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+            syscall_count: [0; 512],
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
@@ -96,6 +100,31 @@ impl TaskControlBlock {
             None
         }
     }
+
+    /// 将 [start, start+len) 以 perm 权限映射进地址空间
+    pub fn mmap(&mut self, start: usize, len: usize, perm: MapPermission) -> isize {
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+        
+        if self.memory_set.has_mapped_page(start_va, end_va) {
+            return -1;
+        }
+        self.memory_set.insert_framed_area(start_va, end_va, perm);
+        0
+    }
+
+    /// 取消 [start, start+len) 的映射
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+        
+        if self.memory_set.has_unmapped_page(start_va, end_va) {
+            return -1;
+        }
+        self.memory_set.remove_framed_area(start_va, end_va);
+        0
+    }
+
 }
 
 #[derive(Copy, Clone, PartialEq)]

@@ -68,6 +68,8 @@ impl From<usize> for VirtPageNum {
         Self(v & ((1 << VPN_WIDTH_SV39) - 1))
     }
 }
+
+
 impl From<PhysAddr> for usize {
     fn from(v: PhysAddr) -> Self {
         v.0
@@ -106,12 +108,12 @@ impl VirtAddr {
 
     /// Get the page offset of virtual address
     pub fn page_offset(&self) -> usize {
-        self.0 & (PAGE_SIZE - 1)
+        self.0 & (PAGE_SIZE - 1)  // 取低 PAGE_SIZE_BITS 位
     }
 
     /// Check if the virtual address is aligned by page size
     pub fn aligned(&self) -> bool {
-        self.page_offset() == 0
+        self.page_offset() == 0  
     }
 }
 impl From<VirtAddr> for VirtPageNum {

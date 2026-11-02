@@ -47,7 +47,7 @@ trait FrameAllocator {
 pub struct StackFrameAllocator {
     current: usize,
     end: usize,
-    recycled: Vec<usize>,
+    recycled: Vec<usize>,  // 回收栈
 }
 
 impl StackFrameAllocator {
@@ -56,6 +56,12 @@ impl StackFrameAllocator {
         self.end = r.0;
         // trace!("last {} Physical Frames.", self.end - self.current);
     }
+
+    /// 当前可用的物理页帧总数（空闲新鲜页 + 回收栈里的页）
+    pub fn remaining(&self) -> usize {
+        self.end - self.current + self.recycled.len()
+    }
+
 }
 impl FrameAllocator for StackFrameAllocator {
     fn new() -> Self {
@@ -116,6 +122,12 @@ pub fn frame_alloc() -> Option<FrameTracker> {
 pub fn frame_dealloc(ppn: PhysPageNum) {
     FRAME_ALLOCATOR.exclusive_access().dealloc(ppn);
 }
+
+/// 当前可用物理页帧数，暴露给外部
+pub fn frame_remaining() -> usize {
+    FRAME_ALLOCATOR.exclusive_access().remaining()
+}
+
 
 #[allow(unused)]
 /// a simple test for frame allocator

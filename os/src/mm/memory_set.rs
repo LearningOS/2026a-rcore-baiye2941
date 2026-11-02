@@ -262,7 +262,53 @@ impl MemorySet {
             false
         }
     }
+
+    /// 检查 [start, end) 中是否存在 已经映射 的页
+    pub fn has_mapped_page(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        for vpn in VPNRange::new(start.floor(), end.ceil()) {
+            if let Some(pte) = self.page_table.translate(vpn) {
+                if pte.is_valid() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// 检查 [start, end) 中是否存在 未映射 的页
+    pub fn has_unmapped_page(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        for vpn in VPNRange::new(start.floor(), end.ceil()) {
+            let mapped = self
+                .page_table
+                .translate(vpn)
+                .map(|pte| pte.is_valid())
+                .unwrap_or(false);
+            if !mapped {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 调用前必须保证整个区间都已映射
+    pub fn remove_framed_area(&mut self, start: VirtAddr, end: VirtAddr) {
+        let (start_vpn, end_vpn) = (start.floor(), end.ceil());
+        loop {
+            let idx = self.areas.iter().position(|area| {
+                area.vpn_range.get_start() >= start_vpn && area.vpn_range.get_end() <= end_vpn
+            });
+            match idx {
+                Some(idx) => {
+                    let mut area = self.areas.remove(idx);
+                    area.unmap(&mut self.page_table); // 清页表项
+                    drop(area); // MapArea 被丢弃 → FrameTracker Drop → 物理页自动回收
+                }
+                None => break,
+            }
+        }
+    }
 }
+
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     vpn_range: VPNRange,

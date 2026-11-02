@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::mm::MapPermission;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
@@ -133,6 +134,41 @@ impl TaskManager {
         inner.tasks[cur].change_program_brk(size)
     }
 
+    /// 为当前 Running 任务建立映射
+    pub fn mmap_current(&self, start: usize, len: usize, perm: MapPermission) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].mmap(start, len, perm)
+    }
+
+    /// 为当前 Running 任务解除映射
+    pub fn munmap_current(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].munmap(start, len)
+    }
+
+    /// 当前 Running 任务对系统调用 syscall_id 的调用次数 +1
+    fn increase_syscall_count(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        if let Some(count) = inner.tasks[cur].syscall_count.get_mut(syscall_id) {
+            *count = count.saturating_add(1);
+        }
+    }
+
+    /// 查询当前 Running 任务调用系统调用 syscall_id 的次数
+    fn get_syscall_count(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur]
+            .syscall_count
+            .get(syscall_id)
+            .copied()
+            .unwrap_or(0) as usize
+    }
+
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -201,4 +237,24 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// 为当前 Running 任务建立映射
+pub fn mmap_memory(start: usize, len: usize, perm: MapPermission) -> isize {
+    TASK_MANAGER.mmap_current(start, len, perm)
+}
+
+/// 为当前 Running 任务解除映射
+pub fn munmap_memory(start: usize, len: usize) -> isize {
+    TASK_MANAGER.munmap_current(start, len)
+}
+
+/// 当前任务的系统调用计数 +1
+pub fn increase_syscall_count(syscall_id: usize) {
+    TASK_MANAGER.increase_syscall_count(syscall_id)
+}
+
+/// 查询当前任务调用某个系统调用的次数
+pub fn get_syscall_count(syscall_id: usize) -> usize {
+    TASK_MANAGER.get_syscall_count(syscall_id)
 }
