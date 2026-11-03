@@ -72,6 +72,42 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    /// 检查[start, end)范围内的虚拟地址是否未被占用 
+    fn is_range_free(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        let start_vpn: VirtPageNum = start.floor();
+        let end_vpn: VirtPageNum = end.ceil();
+        self.areas.iter().all(|area| {
+            area.vpn_range.get_end() <= start_vpn || area.vpn_range.get_start() >= end_vpn
+        })
+    }
+
+    pub(crate) fn mmap(&mut self, start: VirtAddr, len: usize, perm: MapPermission) -> bool {
+        let end = match start.0.checked_add(len) {
+            Some(end) => VirtAddr::from(end),
+            None => return false,
+        };
+        if !self.is_range_free(start, end) {
+            return false;
+        }
+        self.insert_framed_area(start, end, perm);
+        true
+    }
+
+    pub(crate) fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
+        let start_vpn: VirtPageNum = start.floor();
+        let end_vpn: VirtPageNum = end.ceil();
+        if let Some(idx) = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn
+        }) {
+            let mut area = self.areas.remove(idx);
+            area.unmap(&mut self.page_table);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.

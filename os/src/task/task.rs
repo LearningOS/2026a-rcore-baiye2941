@@ -9,6 +9,9 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+const BIG_STRIDE: usize = 1 << 32;
+const INIT_PRIORITY: usize = 16;
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -68,6 +71,9 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    pub(crate) stride: usize,
+    pub(crate) pass: usize,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +124,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    pass: BIG_STRIDE / INIT_PRIORITY,
                 })
             },
         };
@@ -191,6 +199,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0,
+                    pass: BIG_STRIDE / INIT_PRIORITY,
                 })
             },
         });
@@ -206,9 +216,20 @@ impl TaskControlBlock {
         // ---- release parent PCB
     }
 
+    pub(crate) fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let task = Arc::new(TaskControlBlock::new(elf_data));
+        task.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        self.inner_exclusive_access().children.push(task.clone());
+        task
+    }
+
     /// get pid of process
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+
+    pub(crate) fn set_priority(&self, prio: usize) {
+        self.inner_exclusive_access().pass = BIG_STRIDE / prio;
     }
 
     /// change the location of the program break. return None if failed.
