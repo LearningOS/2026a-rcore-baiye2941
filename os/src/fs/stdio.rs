@@ -58,3 +58,4 @@ impl File for Stdout {
         user_buf.len()
     }
 }
+

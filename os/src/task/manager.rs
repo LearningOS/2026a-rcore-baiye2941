@@ -21,9 +21,18 @@ impl TaskManager {
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
         self.ready_queue.push_back(task);
     }
-    /// Take a process out of the ready queue
+    /// Take the process with the minimal stride out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        let mut min_idx = None;
+        let mut min_stride = usize::MAX;
+        for (idx, task) in self.ready_queue.iter().enumerate() {
+            let stride = task.inner_exclusive_access().stride;
+            if stride < min_stride {
+                min_stride = stride;
+                min_idx = Some(idx);
+            }
+        }
+        min_idx.and_then(|idx| self.ready_queue.remove(idx))
     }
 }
 

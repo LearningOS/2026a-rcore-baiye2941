@@ -11,6 +11,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+const BIG_STRIDE: usize = 1 << 32;
+const INIT_PRIORITY: usize = 16;
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -71,6 +74,12 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// stride scheduling: current stride
+    pub stride: usize,
+
+    /// stride scheduling: pass
+    pub pass: usize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +144,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    pass: BIG_STRIDE / INIT_PRIORITY,
                 })
             },
         };
@@ -216,6 +227,8 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0,
+                    pass: BIG_STRIDE / INIT_PRIORITY,
                 })
             },
         });
@@ -229,6 +242,19 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+
+    /// create a new process from elf data of an existing executable file
+    pub(crate) fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let task = Arc::new(TaskControlBlock::new(elf_data));
+        task.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        self.inner_exclusive_access().children.push(task.clone());
+        task
+    }
+
+    /// set the stride scheduling priority of current process
+    pub(crate) fn set_priority(&self, prio: usize) {
+        self.inner_exclusive_access().pass = BIG_STRIDE / prio;
     }
 
     /// get pid of process

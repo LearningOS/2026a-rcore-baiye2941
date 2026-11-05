@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
+    inode_id: u32,
     block_id: usize,
     block_offset: usize,
     fs: Arc<Mutex<EasyFileSystem>>,
@@ -17,18 +18,53 @@ pub struct Inode {
 impl Inode {
     /// Create a vfs inode
     pub fn new(
+        inode_id: u32,
         block_id: u32,
         block_offset: usize,
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
         Self {
+            inode_id,
             block_id: block_id as usize,
             block_offset,
             fs,
             block_device,
         }
     }
+
+    /// getter
+    pub fn inode_id(&self) -> u32 {
+        self.inode_id
+    }
+
+    /// 获取硬链接数
+    pub fn nlink(&self) -> u32 {
+        self.read_disk_inode(|i| i.nlink)
+    }
+
+    /// 检查是否为目录
+    pub fn is_dir(&self) -> bool {
+        self.read_disk_inode(|i| i.is_dir())
+    }
+
+    /// 寻找同名dirent
+    fn find_dirent(&self, name: &str, disk_inode: &DiskInode) -> Option<(usize, u32)> {
+        assert!(disk_inode.is_dir());
+        let file_count = (disk_inode.size as usize) / DIRENT_SZ;
+        let mut dirent = DirEntry::empty();
+        for i in 0..file_count {
+            assert_eq!(
+                disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device),
+                DIRENT_SZ,
+            );
+            if dirent.name() == name {
+                return Some((i, dirent.inode_id() as u32));
+            }
+        }
+        None
+    }
+
     /// Call a function over a disk inode to read it
     fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode) -> V) -> V {
         get_block_cache(self.block_id, Arc::clone(&self.block_device))
@@ -65,6 +101,7 @@ impl Inode {
             self.find_inode_id(name, disk_inode).map(|inode_id| {
                 let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
                 Arc::new(Self::new(
+                    inode_id,
                     block_id,
                     block_offset,
                     self.fs.clone(),
@@ -131,6 +168,7 @@ impl Inode {
         block_cache_sync_all();
         // return inode
         Some(Arc::new(Self::new(
+            new_inode_id,
             block_id,
             block_offset,
             self.fs.clone(),
@@ -182,5 +220,68 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+
+    /// 创建一个文件的硬链接
+    pub fn link(&self, new_name: &str, target_inode_id: u32) -> bool {
+        let mut fs = self.fs.lock();
+
+        // 查重
+        if self
+            .read_disk_inode(|dir| self.find_inode_id(new_name, dir))
+            .is_some()
+        {
+            return false;
+        }
+
+        // 写 dirent, 参考 create 的 119-132
+        self.modify_disk_inode(|dir_inode| {
+            let file_count = (dir_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            self.increase_size(new_size as u32, dir_inode, &mut fs);
+            let dirent = DirEntry::new(new_name, target_inode_id);
+            dir_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+
+        // target nlink += 1
+        let (block_id, offset) = fs.get_disk_inode_pos(target_inode_id);
+        get_block_cache(block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(offset, |i: &mut DiskInode| i.nlink += 1);
+
+        block_cache_sync_all();
+        true
+    }
+
+    /// 删除一个文件硬链接
+    pub fn unlink(&self, name: &str) -> bool {
+        let fs = self.fs.lock();
+
+        let Some((index, target_id)) = self.read_disk_inode(|dir| self.find_dirent(name, dir))
+        else {
+            return false;
+        };
+
+        self.modify_disk_inode(|dir| {
+            dir.write_at(
+                index * DIRENT_SZ,
+                DirEntry::empty().as_bytes(),
+                &self.block_device,
+            )
+        });
+
+        let (block, offset) = fs.get_disk_inode_pos(target_id);
+        get_block_cache(block as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(offset, |i: &mut DiskInode| {
+                i.nlink -= 1;
+            });
+
+        block_cache_sync_all();
+        true
     }
 }

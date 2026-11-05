@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
+use super::{Stat, StatMode};
 
 /// inode in memory
 /// A wrapper around a filesystem inode
@@ -28,6 +29,18 @@ pub struct OSInodeInner {
     inode: Arc<Inode>,
 }
 
+/// 在文件系统中为 old_name 创建指向同一 inode 的硬链接 new_name
+pub fn link_file(old_name: &str, new_name: &str) -> bool {
+    ROOT_INODE
+        .find(old_name)
+        .is_some_and(|inode| ROOT_INODE.link(new_name, inode.inode_id()))
+}
+
+/// 删除 name 对应的目录项并减少目标 inode 的链接计数
+pub fn unlink_file(name: &str) -> bool {
+    ROOT_INODE.unlink(name)
+}
+
 impl OSInode {
     /// create a new inode in memory
     pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
@@ -37,6 +50,7 @@ impl OSInode {
             inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
         }
     }
+
     /// read all data from the inode
     pub fn read_all(&self) -> Vec<u8> {
         let mut inner = self.inner.exclusive_access();
@@ -54,6 +68,8 @@ impl OSInode {
         v
     }
 }
+
+
 
 lazy_static! {
     pub static ref ROOT_INODE: Arc<Inode> = {
@@ -155,5 +171,17 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+
+    fn stat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let inode = &inner.inode;
+        Stat {
+            dev: 0,
+            ino: inode.inode_id() as u64,
+            mode: if inode.is_dir() { StatMode::DIR } else { StatMode::FILE },
+            nlink: inode.nlink(),
+            pad: [0; 7],
+        }
     }
 }
