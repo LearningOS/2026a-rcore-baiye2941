@@ -16,6 +16,7 @@ mod process;
 mod processor;
 mod signal;
 mod switch;
+mod deadlock;
 #[allow(clippy::module_inception)]
 mod task;
 
@@ -38,6 +39,7 @@ pub use processor::{
 };
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
+pub use deadlock::{check_mutex_deadlock, check_semaphore_deadlock};
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
@@ -173,7 +175,7 @@ lazy_static! {
     /// the name "initproc" may be changed to any other app name like "usertests",
     /// but we have user_shell, so we don't need to change it.
     pub static ref INITPROC: Arc<ProcessControlBlock> = {
-        let inode = open_file("ch8b_initproc", OpenFlags::RDONLY).unwrap();
+        let inode = open_file("ch8_usertest", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
         ProcessControlBlock::new(v.as_slice())
     };

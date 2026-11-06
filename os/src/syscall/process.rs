@@ -1,10 +1,12 @@
 use crate::{
+    config::CLOCK_FREQ,
     fs::{open_file, OpenFlags},
-    mm::{translated_ref, translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_ref, translated_refmut, translated_str},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags,
     },
+    timer::get_time,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -148,15 +150,28 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 
 /// get_time syscall
 ///
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
-    -1
+/// 用页表把用户态 `TimeVal` 的物理地址翻译出来，再逐页写回，
+/// 因此 `TimeVal` 跨页时也正确。
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    let token = current_user_token();
+    let ticks = get_time();
+    let time = TimeVal {
+        sec: ticks / CLOCK_FREQ,
+        usec: (ticks % CLOCK_FREQ) * 1_000_000 / CLOCK_FREQ,
+    };
+    let src = unsafe {
+        core::slice::from_raw_parts(
+            &time as *const TimeVal as *const u8,
+            core::mem::size_of::<TimeVal>(),
+        )
+    };
+    let mut offset = 0;
+    for buffer in translated_byte_buffer(token, ts as *const u8, src.len()) {
+        let n = buffer.len();
+        buffer.copy_from_slice(&src[offset..offset + n]);
+        offset += n;
+    }
+    0
 }
 
 /// mmap syscall
